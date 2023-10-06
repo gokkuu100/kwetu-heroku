@@ -6,9 +6,10 @@ from flask_restful import Api, Resource
 from models import db, House, Agent, User
 from flask_jwt_extended import JWTManager, jwt_required
 import jwt
-
+from functools import wraps
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 import redis
+from flask import make_response
 
 redis_store = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
@@ -16,12 +17,34 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///housing.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = '\xaa\x8eJ\x81[\x15\x1bPM\xa7n\xdaZ\x90=\xe3\xf3\x9d\xbaW\x11\xb4\x8b\x94\x95\xe1\xff\x1d^\xa7\x04rc\x8a\x99\xe38\x0e,?=\xf0\xdbm\xa4\xfb\xc1'
+app.config['REDIS_URL'] = "redis://localhost:6379/0"
+
 jwt = JWTManager(app)
 app.json.compact = False
-CORS(app)
+CORS(app, supports_credentials=True)
 migrate = Migrate(app, db)
 db.init_app(app)
 api = Api(app)
+
+
+# Token Blacklisting
+@jwt.token_in_blocklist_loader
+def check_if_token_in_blacklist(jwt_header, jwt_payload):
+    jti = jwt_payload['jti']
+    return redis_store.get(jti) is not None
+
+# Authorization Middleware
+def role_required(required_role):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            current_user = get_jwt_identity()
+            if current_user['role'] == required_role:
+                return fn(*args, **kwargs)
+            else:
+                return jsonify(message='Unauthorized'), 403
+        return wrapper
+    return decorator
 
 @app.route('/houses', methods=['GET'])
 def get_houses():
@@ -46,6 +69,7 @@ def get_houses():
 
 @app.route('/houses', methods=['POST'])
 @jwt_required()
+@role_required('agent')
 def create_house():
     data = request.get_json()
 
@@ -116,6 +140,7 @@ def get_house_by_id(id):
 
 @app.route('/houses/<int:id>', methods=['PATCH'])
 @jwt_required()
+@role_required('agent')
 def update_house(id):
     house = House.query.filter_by(id=id).first()
 
@@ -140,6 +165,7 @@ def update_house(id):
 
 @app.route('/houses/<int:id>', methods=['DELETE'])
 @jwt_required()
+@role_required('agent')
 def delete_house(id):
     house = House.query.filter_by(id=id).first()
 
@@ -179,25 +205,25 @@ def get_agent_by_id(agent_id):
 
     return make_response(jsonify(response_data), 200)
 
-@app.route('/agents/<int:agent_id>/dashboard', methods=['GET'])
-@jwt_required()
-def get_agent_dashboard(agent_id):
-    current_user = get_jwt_identity()
-    if current_user['role'] == 'agent':
-        # Get agent details based on the current user's username (assuming it's unique)
-        agent = Agent.query.filter_by(username=current_user['username']).first()
-        if agent:
-            agent_data = {
-                'id': agent.id,
-                'name': agent.name,
-                'email': agent.email,
-                'phonebook': agent.phonebook
-            }
-            return make_response(jsonify(agent_data), 200)
-        else:
-            return jsonify({"error": "Agent not found"}), 404
-    else:
-        return jsonify(message='Unauthorized'), 403
+# @app.route('/agents/<int:agent_id>/dashboard', methods=['GET'])
+# @jwt_required()
+# def get_agent_dashboard(agent_id):
+#     current_user = get_jwt_identity()
+#     if current_user['role'] == 'agent':
+#         # Get agent details based on the current user's username (assuming it's unique)
+#         agent = Agent.query.filter_by(username=current_user['username']).first()
+#         if agent:
+#             agent_data = {
+#                 'id': agent.id,
+#                 'name': agent.name,
+#                 'email': agent.email,
+#                 'phonebook': agent.phonebook
+#             }
+#             return make_response(jsonify(agent_data), 200)
+#         else:
+#             return jsonify({"error": "Agent not found"}), 404
+#     else:
+#         return jsonify(message='Unauthorized'), 403
 
 
 @app.route('/users', methods=['GET'])
@@ -250,8 +276,14 @@ def sign_up():
     return jsonify({"message": "User created successfully"}), 201
 
 # /login route
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def sign_in():
+    if request.method == 'OPTIONS':
+        # Respond to preflight requests
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        return response
+
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
@@ -267,13 +299,31 @@ def sign_in():
     if user and user.check_password(password):
         # User authenticated successfully, generate JWT token with role=user
         access_token = create_access_token(identity={'email': email, 'role': 'user', 'user_id': user.id})
-        return jsonify(access_token=access_token), 200
+        response_data = {
+            'success': True,
+            'role': 'user',
+            'id': user.id,
+            'access_token': access_token
+        }
+        response = make_response(jsonify(response_data))
+        response.set_cookie('access_token', access_token)
+        return response, 200
+
     elif agent and agent.check_password(password):
         # Agent authenticated successfully, generate JWT token with role=agent
         access_token = create_access_token(identity={'email': email, 'role': 'agent', 'agent_id': agent.id})
-        return jsonify(access_token=access_token), 200
+        response_data = {
+            'success': True,
+            'role': 'agent',
+            'id': agent.id,
+            'access_token': access_token
+        }
+        response = make_response(jsonify(response_data))
+        response.set_cookie('access_token', access_token)
+        return response, 200
     else:
         return jsonify({"error": "Invalid credentials"}), 401
+
 
 @app.route('/logout', methods=['POST'])
 @jwt_required()
