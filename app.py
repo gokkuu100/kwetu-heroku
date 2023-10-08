@@ -20,13 +20,13 @@ app.config['JWT_SECRET_KEY'] = '\xaa\x8eJ\x81[\x15\x1bPM\xa7n\xdaZ\x90=\xe3\xf3\
 app.config['REDIS_URL'] = "redis://localhost:6379/0"
 
 
+
 jwt = JWTManager(app)
 app.json.compact = False    
 CORS(app, supports_credentials=True)
 migrate = Migrate(app, db)
 db.init_app(app)
 api = Api(app) 
-
 
 @app.route('/users', methods=['GET'])
 def get_users():
@@ -148,4 +148,3 @@ def restricted_resource():
     else:
         # Invalid role
         return jsonify(message='Unauthorized'), 403
-
