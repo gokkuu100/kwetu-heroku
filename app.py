@@ -19,6 +19,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = '\xaa\x8eJ\x81[\x15\x1bPM\xa7n\xdaZ\x90=\xe3\xf3\x9d\xbaW\x11\xb4\x8b\x94\x95\xe1\xff\x1d^\xa7\x04rc\x8a\x99\xe38\x0e,?=\xf0\xdbm\xa4\xfb\xc1'
 app.config['REDIS_URL'] = "redis://localhost:6379/0"
 
+
 jwt = JWTManager(app)
 app.json.compact = False    
 CORS(app, supports_credentials=True)
@@ -147,3 +148,4 @@ def restricted_resource():
     else:
         # Invalid role
         return jsonify(message='Unauthorized'), 403
+
