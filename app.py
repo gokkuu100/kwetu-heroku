@@ -205,27 +205,6 @@ def get_agent_by_id(agent_id):
 
     return make_response(jsonify(response_data), 200)
 
-# @app.route('/agents/<int:agent_id>/dashboard', methods=['GET'])
-# @jwt_required()
-# def get_agent_dashboard(agent_id):
-#     current_user = get_jwt_identity()
-#     if current_user['role'] == 'agent':
-#         # Get agent details based on the current user's username (assuming it's unique)
-#         agent = Agent.query.filter_by(username=current_user['username']).first()
-#         if agent:
-#             agent_data = {
-#                 'id': agent.id,
-#                 'name': agent.name,
-#                 'email': agent.email,
-#                 'phonebook': agent.phonebook
-#             }
-#             return make_response(jsonify(agent_data), 200)
-#         else:
-#             return jsonify({"error": "Agent not found"}), 404
-#     else:
-#         return jsonify(message='Unauthorized'), 403
-
-
 @app.route('/users', methods=['GET'])
 def get_users():
     all_users = User.query.all()
