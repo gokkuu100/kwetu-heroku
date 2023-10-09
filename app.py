@@ -8,16 +8,18 @@ from flask_jwt_extended import JWTManager, jwt_required
 import jwt
 from functools import wraps
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
-import redis
+# import redis
 from flask import make_response
 
-redis_store = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+# redis_store = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+
+blacklisted_tokens = set()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///housing.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = '\xaa\x8eJ\x81[\x15\x1bPM\xa7n\xdaZ\x90=\xe3\xf3\x9d\xbaW\x11\xb4\x8b\x94\x95\xe1\xff\x1d^\xa7\x04rc\x8a\x99\xe38\x0e,?=\xf0\xdbm\xa4\xfb\xc1'
-app.config['REDIS_URL'] = "redis://localhost:6379/0"
+# app.config['REDIS_URL'] = "redis://localhost:6379/0"
 
 jwt = JWTManager(app)
 app.json.compact = False
@@ -27,11 +29,17 @@ db.init_app(app)
 api = Api(app)
 
 
-# Token Blacklisting
+# # Token Blacklisting with redis
+# @jwt.token_in_blocklist_loader
+# def check_if_token_in_blacklist(jwt_header, jwt_payload):
+#     jti = jwt_payload['jti']
+#     return redis_store.get(jti) is not None
+
 @jwt.token_in_blocklist_loader
 def check_if_token_in_blacklist(jwt_header, jwt_payload):
     jti = jwt_payload['jti']
-    return redis_store.get(jti) is not None
+    return jti in blacklisted_tokens
+
 
 # Authorization Middleware
 def role_required(required_role):
@@ -304,13 +312,21 @@ def sign_in():
         return jsonify({"error": "Invalid credentials"}), 401
 
 
-@app.route('/logout', methods=['POST'])
-@jwt_required()
+# Token blacklisting with redis
+# @app.route('/logout', methods=['POST'])
+# @jwt_required()
+# def logout():
+#     jti = get_jwt_identity()['jti']
+#     # Add the token's JTI (JWT ID) to the blacklist
+#     redis_store.set(jti, 'true', ex=3600)  # Token will be blacklisted for 1 hour
+#     return jsonify(message='Logged out successfully'), 200
+
 def logout():
     jti = get_jwt_identity()['jti']
-    # Add the token's JTI (JWT ID) to the blacklist
-    redis_store.set(jti, 'true', ex=3600)  # Token will be blacklisted for 1 hour
+    # Add the token's JTI (JWT ID) to the blacklist (in-memory set)
+    blacklisted_tokens.add(jti)
     return jsonify(message='Logged out successfully'), 200
+
 
 @app.route('/protected', methods=['GET'])
 @jwt_required()
